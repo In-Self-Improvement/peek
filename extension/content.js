@@ -51,7 +51,7 @@ function handleKeyDown(e) {
     isInspectMode = false;
   } else if (/^[1-5]$/.test(e.key)) {
     const index = parseInt(e.key) - 1;
-    const items = currentTooltip?.querySelectorAll('.dvl-item');
+    const items = currentTooltip?.querySelectorAll('.pk-item');
     if (items?.[index]) items[index].click();
   }
 }
@@ -60,7 +60,7 @@ function highlightElement(element) {
   removeHighlight();
   const rect = element.getBoundingClientRect();
   const highlight = document.createElement('div');
-  highlight.id = 'dvl-highlight';
+  highlight.id = 'pk-highlight';
   highlight.style.cssText = `
     position: fixed;
     top: ${rect.top}px;
@@ -86,15 +86,15 @@ function showTooltip(element) {
   const strategies = generateSearchStrategies(element);
 
   const tooltip = document.createElement('div');
-  tooltip.id = 'dvl-tooltip';
-  tooltip.className = 'dvl-tooltip';
+  tooltip.id = 'pk-tooltip';
+  tooltip.className = 'pk-tooltip';
   tooltip.innerHTML = `
-    <div class="dvl-header">🔍 devlens</div>
+    <div class="pk-header">🔍 peek</div>
     ${strategies.map((s, i) => `
-      <div class="dvl-item dvl-conf-${getConfidenceClass(s.confidence)}"
+      <div class="pk-item pk-conf-${getConfidenceClass(s.confidence)}"
            data-value="${escapeHtml(s.label)}">
-        <div class="dvl-label"><span class="dvl-conf-badge">${s.confidence}%</span> ${escapeHtml(s.label)}</div>
-        <div class="dvl-desc">${escapeHtml(s.description)} · press ${i + 1}</div>
+        <div class="pk-label"><span class="pk-conf-badge">${s.confidence}%</span> ${escapeHtml(s.label)}</div>
+        <div class="pk-desc">${escapeHtml(s.description)} · press ${i + 1}</div>
       </div>
     `).join('')}
   `;
@@ -102,7 +102,7 @@ function showTooltip(element) {
   document.body.appendChild(tooltip);
   currentTooltip = tooltip;
 
-  tooltip.querySelectorAll('.dvl-item').forEach(item => {
+  tooltip.querySelectorAll('.pk-item').forEach(item => {
     item.addEventListener('click', async (e) => {
       e.stopPropagation();
       const value = item.dataset.value;
@@ -117,10 +117,10 @@ function showTooltip(element) {
         ta.remove();
       }
       const original = item.innerHTML;
-      item.classList.add('dvl-copied');
-      item.innerHTML = '<div class="dvl-label">✓ Copied!</div>';
+      item.classList.add('pk-copied');
+      item.innerHTML = '<div class="pk-label">✓ Copied!</div>';
       setTimeout(() => {
-        item.classList.remove('dvl-copied');
+        item.classList.remove('pk-copied');
         item.innerHTML = original;
       }, 600);
     });

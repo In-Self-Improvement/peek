@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "devlens",
+  "name": "peek",
   "version": "1.0.0",
   "description": "Hover over any web element to find its code identifier instantly",
   "permissions": ["activeTab", "clipboardWrite"],
@@ -10,7 +10,7 @@
       "48": "icons/icon48.png",
       "128": "icons/icon128.png"
     },
-    "default_title": "Toggle devlens"
+    "default_title": "Toggle peek"
   },
   "content_scripts": [{
     "matches": ["<all_urls>"],
