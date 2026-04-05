@@ -1,0 +1,89 @@
+#dvl-highlight {
+  box-sizing: border-box;
+}
+
+.dvl-tooltip {
+  position: fixed !important;
+  top: 20px !important;
+  right: 20px !important;
+  width: 360px !important;
+  background: #FFFFFF !important;
+  border: 1px solid #E5E7EB !important;
+  border-radius: 10px !important;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.18) !important;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", monospace !important;
+  font-size: 13px !important;
+  z-index: 2147483647 !important;
+  overflow: hidden !important;
+  user-select: none !important;
+}
+
+.dvl-header {
+  padding: 10px 14px !important;
+  border-bottom: 1px solid #E5E7EB !important;
+  font-weight: 700 !important;
+  font-size: 11px !important;
+  color: #6B7280 !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.08em !important;
+  background: #F9FAFB !important;
+}
+
+.dvl-item {
+  padding: 10px 14px !important;
+  cursor: pointer !important;
+  min-height: 44px !important;
+  display: flex !important;
+  flex-direction: column !important;
+  justify-content: center !important;
+  gap: 2px !important;
+  border-bottom: 1px solid #F3F4F6 !important;
+  transition: background 0.1s ease !important;
+}
+
+.dvl-item:hover {
+  background: #EFF6FF !important;
+}
+
+.dvl-item:last-child {
+  border-bottom: none !important;
+}
+
+.dvl-label {
+  font-family: "SFMono-Regular", Consolas, monospace !important;
+  word-break: break-all !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+}
+
+.dvl-conf-badge {
+  font-size: 10px !important;
+  font-weight: 700 !important;
+  background: #3B82F6 !important;
+  color: white !important;
+  padding: 1px 5px !important;
+  border-radius: 4px !important;
+  flex-shrink: 0 !important;
+}
+
+.dvl-desc {
+  font-size: 11px !important;
+  color: #9CA3AF !important;
+  font-family: -apple-system, sans-serif !important;
+}
+
+.dvl-conf-high .dvl-label { font-weight: 600 !important; color: #111827 !important; }
+.dvl-conf-medium .dvl-label { font-weight: 500 !important; color: #374151 !important; }
+.dvl-conf-low .dvl-label { font-weight: 400 !important; color: #6B7280 !important; }
+.dvl-conf-vlow .dvl-label { font-weight: 400 !important; color: #9CA3AF !important; }
+.dvl-conf-vlow .dvl-conf-badge { background: #D1D5DB !important; color: #6B7280 !important; }
+
+.dvl-item.dvl-copied {
+  background: #DBEAFE !important;
+}
+
+.dvl-item.dvl-copied .dvl-label {
+  color: #1D4ED8 !important;
+  font-weight: 600 !important;
+}
