@@ -1,11 +1,20 @@
 let isInspectMode = false;
 let currentTooltip = null;
 let currentHighlight = null;
+const selectorEngine = globalThis.peekSelectorEngine;
+
+if (!selectorEngine) {
+  console.error('[peek] selector engine was not loaded before content script');
+}
 
 chrome.runtime.onMessage.addListener((message) => {
   if (message.action === "toggleInspect") {
     isInspectMode = !isInspectMode;
-    isInspectMode ? enableInspectMode() : disableInspectMode();
+    if (isInspectMode) {
+      enableInspectMode();
+    } else {
+      disableInspectMode();
+    }
   }
 });
 
@@ -83,18 +92,18 @@ function removeHighlight() {
 
 function showTooltip(element) {
   removeTooltip();
-  const strategies = generateSearchStrategies(element);
+  const strategies = selectorEngine?.generateSearchStrategies(element) ?? [];
 
   const tooltip = document.createElement('div');
   tooltip.id = 'pk-tooltip';
   tooltip.className = 'pk-tooltip';
   tooltip.innerHTML = `
     <div class="pk-header">🔍 peek</div>
-    ${strategies.map((s, i) => `
-      <div class="pk-item pk-conf-${getConfidenceClass(s.confidence)}"
-           data-value="${escapeHtml(s.label)}">
-        <div class="pk-label"><span class="pk-conf-badge">${s.confidence}%</span> ${escapeHtml(s.label)}</div>
-        <div class="pk-desc">${escapeHtml(s.description)} · press ${i + 1}</div>
+    ${strategies.map((strategy, i) => `
+      <div class="pk-item pk-conf-${selectorEngine?.getConfidenceClass(strategy.confidence) ?? 'vlow'}"
+           data-value="${selectorEngine?.escapeHtml(strategy.label) ?? strategy.label}">
+        <div class="pk-label"><span class="pk-conf-badge">${strategy.confidence}%</span> ${selectorEngine?.escapeHtml(strategy.label) ?? strategy.label}</div>
+        <div class="pk-desc">${selectorEngine?.escapeHtml(strategy.description) ?? strategy.description} · press ${i + 1}</div>
       </div>
     `).join('')}
   `;
@@ -130,115 +139,4 @@ function showTooltip(element) {
 function removeTooltip() {
   currentTooltip?.remove();
   currentTooltip = null;
-}
-
-function getConfidenceClass(c) {
-  if (c >= 85) return 'high';
-  if (c >= 70) return 'medium';
-  if (c >= 50) return 'low';
-  return 'vlow';
-}
-
-function escapeHtml(text) {
-  const div = document.createElement('div');
-  div.textContent = text;
-  return div.innerHTML;
-}
-
-function isTailwindUtility(cls) {
-  const patterns = [
-    /^(flex|grid|block|inline|hidden|relative|absolute|fixed|sticky)/,
-    /^(items|justify|content|self|place)-/,
-    /^[pm][xytblr]?-/,
-    /^w-|^h-|^min-|^max-/,
-    /^text-(xs|sm|base|lg|xl|2xl|3xl|4xl|5xl)/,
-    /^font-(thin|light|normal|medium|semibold|bold|extrabold)/,
-    /^leading-|^tracking-/,
-    /^rounded/,
-    /^shadow/,
-    /^border(?!-(blue|green|red|purple|indigo|pink|yellow))/,
-    /^gap-|^space-/,
-    /^overflow-/,
-    /^cursor-/,
-    /^transition|^duration-|^ease-/,
-    /^opacity-/,
-    /^z-/,
-    /^col-|^row-/,
-    /^sr-only/
-  ];
-  return patterns.some(p => p.test(cls));
-}
-
-function generateSearchStrategies(element) {
-  const strategies = [];
-  const classes = (element.className && typeof element.className === 'string')
-    ? element.className.split(' ').filter(Boolean)
-    : [];
-
-  // 1순위: data-testid, data-cy, data-test, data-qa (95%)
-  ['testid', 'cy', 'test', 'qa'].forEach(attr => {
-    const value = element.dataset[attr];
-    if (value) {
-      strategies.push({ label: `data-${attr}="${value}"`, confidence: 95, description: 'Test identifier' });
-    }
-  });
-
-  // 2순위: ID (90%)
-  if (element.id) {
-    strategies.push({ label: `id="${element.id}"`, confidence: 90, description: 'Unique ID' });
-  }
-
-  // 3순위: PascalCase 컴포넌트 클래스 (85%)
-  classes.filter(c => /^[A-Z][a-zA-Z0-9]+/.test(c)).forEach(cls => {
-    strategies.push({ label: `className="${cls}"`, confidence: 85, description: 'Component class' });
-  });
-
-  // 4순위: name, role, aria-label (80-75%)
-  [{ name: 'name', conf: 80 }, { name: 'role', conf: 78 }, { name: 'aria-label', conf: 75 }].forEach(({ name, conf }) => {
-    const value = element.getAttribute(name);
-    if (value) strategies.push({ label: `${name}="${value}"`, confidence: conf, description: `${name} attribute` });
-  });
-
-  // 5순위: 의미있는 일반 클래스 (70%)
-  classes.filter(c => c.length > 2 && !/^[A-Z]/.test(c) && !isTailwindUtility(c))
-    .slice(0, 2)
-    .forEach(cls => strategies.push({ label: `className="${cls}"`, confidence: 70, description: 'CSS class' }));
-
-  // 6순위: tag + type (65%)
-  const type = element.getAttribute('type');
-  if (type) {
-    strategies.push({ label: `${element.tagName.toLowerCase()}[type="${type}"]`, confidence: 65, description: 'Tag with type' });
-  }
-
-  // 7순위: 색상 Tailwind (55%)
-  const colorClasses = classes.filter(c => /^(bg|text)-(blue|green|red|purple|indigo|pink|yellow)/.test(c));
-  if (colorClasses.length > 0) {
-    strategies.push({ label: `className="${colorClasses.join(' ')}"`, confidence: 55, description: 'Color classes' });
-  }
-
-  // 8순위: CSS Selector (40%)
-  strategies.push({ label: generateShortSelector(element), confidence: 40, description: 'CSS selector' });
-
-  return strategies.sort((a, b) => b.confidence - a.confidence).slice(0, 5);
-}
-
-function generateShortSelector(element) {
-  const parts = [];
-  let current = element;
-  let depth = 0;
-
-  while (current && current !== document.body && depth < 3) {
-    const tag = current.tagName.toLowerCase();
-    if (current.id) { parts.unshift(`#${current.id}`); break; }
-    const meaningfulClass = (current.className?.split(' ') || []).find(c => c && !isTailwindUtility(c));
-    if (meaningfulClass) {
-      parts.unshift(`${tag}.${meaningfulClass}`);
-    } else {
-      const index = Array.from(current.parentElement?.children || []).indexOf(current) + 1;
-      parts.unshift(`${tag}:nth-child(${index})`);
-    }
-    current = current.parentElement;
-    depth++;
-  }
-  return parts.join(' > ');
 }
