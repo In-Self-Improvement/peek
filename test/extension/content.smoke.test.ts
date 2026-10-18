@@ -24,8 +24,8 @@ test("content script smoke: toggle inspect mode, hover target, then exit with Es
     },
   };
 
-  runBrowserScript("../selector-engine.js");
-  runBrowserScript("../content.js");
+  runBrowserScript("../../extension/selector-engine.js");
+  runBrowserScript("../../extension/content.js");
 
   expect(messageListeners).toHaveLength(1);
 

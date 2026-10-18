@@ -64,12 +64,80 @@
     return parts.join(" > ");
   }
 
+  function getReactFiberNode(element) {
+    if (!element || typeof element !== "object") return null;
+
+    for (const key of Object.getOwnPropertyNames(element)) {
+      if (key.startsWith("__reactFiber$")) {
+        return element[key];
+      }
+    }
+
+    return null;
+  }
+
+  function getReactDisplayName(type) {
+    if (!type) return null;
+
+    if (typeof type === "function") {
+      return type.displayName || type.name || null;
+    }
+
+    if (typeof type === "object") {
+      const nestedType = type.render || type.type;
+      if (typeof nestedType === "function") {
+        return nestedType.displayName || nestedType.name || type.displayName || null;
+      }
+
+      return type.displayName || type.name || null;
+    }
+
+    return null;
+  }
+
+  function getReactComponentName(element) {
+    let currentElement = element;
+
+    while (currentElement) {
+      let fiber = getReactFiberNode(currentElement);
+      while (fiber) {
+        const type = fiber.elementType || fiber.type;
+        const name = getReactDisplayName(type);
+        if (name && typeof type !== "string") {
+          return name;
+        }
+
+        fiber = fiber.return;
+      }
+
+      currentElement = currentElement.parentElement;
+    }
+
+    return null;
+  }
+
+  function getReactConfidence(name) {
+    if (!name) return 0;
+    if (/^[A-Z][A-Za-z0-9_$]+$/.test(name)) return 92;
+    if (name.length > 1) return 78;
+    return 55;
+  }
+
   function generateSearchStrategies(element) {
     const strategies = [];
     const classes =
       element.className && typeof element.className === "string"
         ? element.className.split(" ").filter(Boolean)
         : [];
+    const reactComponentName = getReactComponentName(element);
+
+    if (reactComponentName) {
+      strategies.push({
+        label: `component="${reactComponentName}"`,
+        confidence: getReactConfidence(reactComponentName),
+        description: "React component",
+      });
+    }
 
     ["testid", "cy", "test", "qa"].forEach((attr) => {
       const value = element.dataset[attr];
@@ -163,6 +231,7 @@
   global.peekSelectorEngine = {
     getConfidenceClass,
     escapeHtml,
+    getReactComponentName,
     isTailwindUtility,
     generateSearchStrategies,
   };

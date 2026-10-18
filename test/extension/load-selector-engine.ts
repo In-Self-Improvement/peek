@@ -12,13 +12,14 @@ export type SelectorStrategy = {
 export type SelectorEngine = {
   getConfidenceClass: (confidence: number) => string;
   escapeHtml: (text: string) => string;
+  getReactComponentName: (element: HTMLElement) => string | null;
   isTailwindUtility: (className: string) => boolean;
   generateSearchStrategies: (element: HTMLElement) => SelectorStrategy[];
 };
 
 export function loadSelectorEngine(): SelectorEngine {
   const currentDir = dirname(fileURLToPath(import.meta.url));
-  const scriptPath = resolve(currentDir, "../selector-engine.js");
+  const scriptPath = resolve(currentDir, "../../extension/selector-engine.js");
   const source = readFileSync(scriptPath, "utf8");
   vm.runInThisContext(source, { filename: scriptPath });
   return (globalThis as { peekSelectorEngine?: SelectorEngine }).peekSelectorEngine!;

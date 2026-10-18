@@ -3,7 +3,7 @@
   "name": "peek",
   "version": "1.0.0",
   "description": "Hover over any web element to find its code identifier instantly",
-  "permissions": ["activeTab", "clipboardWrite"],
+  "permissions": ["activeTab", "clipboardWrite", "scripting"],
   "action": {
     "default_title": "Toggle peek"
   },
