@@ -16,13 +16,10 @@ chrome.action.onClicked.addListener(async (tab) => {
     }
 
     try {
-      await chrome.scripting.insertCSS({
-        target: { tabId: tab.id },
-        files: ["content.css"],
-      });
+      // content.css는 content.js가 Shadow DOM 안에 직접 불러온다
       await chrome.scripting.executeScript({
         target: { tabId: tab.id },
-        files: ["selector-engine.js", "content.js"],
+        files: ["selector-engine.js", "prompt.js", "content.js"],
       });
       await sendToggleMessage(tab.id);
     } catch (injectionError) {

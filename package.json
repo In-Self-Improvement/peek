@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "vitest run"
+    "test": "vitest run",
+    "package": "rm -f peek-extension.zip && cd extension && zip -qr ../peek-extension.zip . -x '.*' && cd .. && unzip -l peek-extension.zip"
   },
   "dependencies": {
     "next": "^16.2.4",

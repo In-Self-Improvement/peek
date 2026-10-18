@@ -7,43 +7,57 @@ import { expect, test } from "vitest";
 function runBrowserScript(relativePath: string) {
   const testDir = dirname(fileURLToPath(import.meta.url));
   const scriptPath = resolve(testDir, relativePath);
-  const source = readFileSync(scriptPath, "utf8");
-  vm.runInThisContext(source, { filename: scriptPath });
+  vm.runInThisContext(readFileSync(scriptPath, "utf8"), { filename: scriptPath });
 }
 
-test("content script smoke: toggle inspect mode, hover target, then exit with Escape", () => {
-  const messageListeners: Array<(message: { action?: string }) => void> = [];
+const flush = () => new Promise((r) => setTimeout(r, 20));
 
+test("content script smoke: toggle, click element, write a note, copy markdown, exit", async () => {
+  const listeners: Array<(message: { action?: string }) => void> = [];
+  let copied = "";
   (globalThis as unknown as { chrome: unknown }).chrome = {
     runtime: {
-      onMessage: {
-        addListener: (listener: (message: { action?: string }) => void) => {
-          messageListeners.push(listener);
-        },
-      },
+      onMessage: { addListener: (listener: (message: { action?: string }) => void) => listeners.push(listener) },
+      getURL: (path: string) => `chrome-extension://test/${path}`,
     },
   };
+  Object.defineProperty(navigator, "clipboard", {
+    value: { writeText: async (text: string) => void (copied = text) },
+    configurable: true,
+  });
 
   runBrowserScript("../../extension/selector-engine.js");
+  runBrowserScript("../../extension/prompt.js");
   runBrowserScript("../../extension/content.js");
-
-  expect(messageListeners).toHaveLength(1);
-
-  messageListeners[0]({ action: "toggleInspect" });
-  expect(document.body.style.cursor).toBe("crosshair");
+  runBrowserScript("../../extension/content.js"); // 재주입돼도 리스너는 하나
+  expect(listeners).toHaveLength(1);
 
   const target = document.createElement("button");
-  target.className = "PrimaryButton px-4";
-  target.textContent = "Submit";
+  target.dataset.testid = "buy";
+  target.textContent = "Buy";
   document.body.appendChild(target);
-  target.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
 
-  expect(document.getElementById("pk-highlight")).toBeTruthy();
-  expect(document.getElementById("pk-tooltip")).toBeTruthy();
+  listeners[0]({ action: "toggleInspect" });
+  const root = document.querySelector("peek-root")!.shadowRoot!;
+  expect(root.querySelector(".bar")).toBeTruthy();
+
+  target.dispatchEvent(new MouseEvent("mousemove", { bubbles: true }));
+  const pageClick = new MouseEvent("click", { bubbles: true, cancelable: true });
+  target.dispatchEvent(pageClick);
+  expect(pageClick.defaultPrevented).toBe(true); // 페이지 동작은 막힌다
+
+  const pop = root.querySelector<HTMLFormElement>(".pop")!;
+  expect(pop.hidden).toBe(false);
+  root.querySelector("textarea")!.value = "더 크게";
+  pop.requestSubmit();
+  await flush();
+
+  expect(root.querySelectorAll(".pin")).toHaveLength(1);
+  root.querySelector<HTMLButtonElement>('[data-act="copy"]')!.click();
+  await flush();
+  expect(copied).toContain("## 1. 더 크게");
+  expect(copied).toContain('`[data-testid="buy"]`');
 
   document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
-
-  expect(document.body.style.cursor).toBe("");
-  expect(document.getElementById("pk-highlight")).toBeNull();
-  expect(document.getElementById("pk-tooltip")).toBeNull();
+  expect(document.querySelector("peek-root")).toBeNull();
 });
