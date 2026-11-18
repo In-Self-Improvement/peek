@@ -4,7 +4,7 @@
   "short_name": "peek",
   "version": "1.1.0",
   "description": "Click any element on a web page, write what to change, and copy a precise prompt for Claude Code, Cursor or Codex.",
-  "permissions": ["activeTab", "scripting"],
+  "permissions": ["activeTab", "scripting", "storage"],
   "action": {
     "default_title": "peek 켜기/끄기 (Alt+Shift+P)",
     "default_icon": {
