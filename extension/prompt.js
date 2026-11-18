@@ -117,7 +117,7 @@
 
     annotations.forEach((annotation, index) => {
       const { info } = annotation;
-      lines.push("", `## ${index + 1}. ${annotation.note.trim()}`);
+      lines.push("", `## ${annotation.number ?? index + 1}. ${annotation.note.trim()}`);
       lines.push(`- Element: \`${info.snippet}\``);
       lines.push(`- Selector: \`${info.selector}\``);
       if (info.component) lines.push(`- React component: <${info.component}>`);

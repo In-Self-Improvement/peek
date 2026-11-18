@@ -178,3 +178,81 @@ button:disabled {
     opacity: 0;
   }
 }
+
+.panel {
+  position: fixed;
+  right: 12px;
+  bottom: 82px;
+  width: min(360px, calc(100vw - 24px));
+  max-height: min(60vh, 440px);
+  overflow: auto;
+  padding: 12px;
+  border: 1px solid #e7e5e4;
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.16);
+  font: 13px/1.4 system-ui, sans-serif;
+  color: #1c1917;
+  pointer-events: auto;
+}
+
+.panel fieldset {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.panel legend {
+  font-weight: 700;
+}
+
+.panel ul {
+  margin: 8px 0;
+  padding: 0;
+  list-style: none;
+}
+
+.panel li {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 0;
+  border-bottom: 1px solid #e7e5e4;
+}
+
+.panel label,
+.panel details {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.panel details p {
+  white-space: pre-wrap;
+}
+
+.panel button {
+  flex-shrink: 0;
+}
+
+.pop, .toast {
+  z-index: 1;
+}
+
+.pop {
+  max-width: calc(100vw - 24px);
+}
+
+.bar {
+  max-width: calc(100vw - 16px);
+  flex-wrap: wrap;
+  justify-content: center;
+  border-radius: 16px;
+}
+
+@media (max-width: 560px) {
+  .bar .status {
+    display: none;
+  }
+}

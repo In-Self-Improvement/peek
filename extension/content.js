@@ -15,11 +15,14 @@
   let ui = null;
   let hoverEl = null;
   let draft = null; // { el, index } index가 있으면 기존 메모 수정
-  let state = { revision: 0, annotations: [], nextNumber: 1 };
+  const emptyWork = { revision: 0, annotations: [], nextNumber: 1, history: [] };
+  let state = emptyWork;
   let annotations = state.annotations;
   let key = "";
   let busy = false;
   let ready = false;
+  let view = "";
+  const selected = new Set();
   let loadId = 0;
   const elements = new WeakMap();
 
@@ -32,8 +35,12 @@
   }
 
   function applyState(saved) {
-    state = saved ?? { revision: 0, annotations: [], nextNumber: 1 };
+    state = { ...emptyWork, ...saved };
     annotations = state.annotations;
+    for (const number of selected) {
+      if (!annotations.some((item) => item.number === number)) selected.delete(number);
+    }
+    renderPanel();
   }
 
   async function loadWork() {
@@ -41,6 +48,7 @@
     const requestedKey = `peek:${location.href}`;
     key = requestedKey;
     ready = false;
+    selected.clear();
     applyState();
     render();
     try {
@@ -61,7 +69,7 @@
     void loadWork();
   }
 
-  async function saveWork(changes) {
+  async function saveWork(changes, { finishDraft = false, copied = false } = {}) {
     const id = loadId;
     const next = { ...state, ...changes };
     busy = true;
@@ -70,17 +78,21 @@
       const result = await chrome.runtime.sendMessage({ action: "savePeekWork", key, state: next });
       if (loadId !== id) return false;
       if (result?.conflict) {
-        closeDraft();
+        if (draft?.index !== undefined) closeDraft();
         await loadWork();
-        showToast("다른 탭에서 작업이 바뀌었어요. 최신 작업을 불러왔어요");
+        showToast(copied
+          ? "복사했어요. 다른 탭에서 작업이 바뀌어 히스토리에는 저장하지 못했어요"
+          : "다른 탭에서 작업이 바뀌었어요. 최신 작업을 불러왔어요");
         return false;
       }
       if (!result?.ok) throw new Error("Storage write failed");
       applyState({ ...next, revision: next.revision + 1 });
-      closeDraft();
+      if (finishDraft) closeDraft();
       return true;
     } catch {
-      if (loadId === id) showToast("메모를 저장하지 못했어요. 다시 시도해 주세요");
+      if (loadId === id) showToast(copied
+        ? "복사했지만 히스토리를 저장하지 못했어요. 다시 시도해 주세요"
+        : "메모를 저장하지 못했어요. 다시 시도해 주세요");
       return false;
     } finally {
       busy = false;
@@ -125,6 +137,7 @@
     ui = null;
     hoverEl = null;
     draft = null;
+    view = "";
   }
 
   function mountUi() {
@@ -144,14 +157,24 @@
           <button type="submit" class="primary">추가</button>
         </div>
       </form>
+      <section class="panel" aria-label="peek 메모" hidden>
+        <fieldset>
+          <legend></legend>
+          <ul></ul>
+          <p class="empty"></p>
+          <button type="button" class="ghost danger" data-act="clear-history" hidden>히스토리 비우기</button>
+        </fieldset>
+      </section>
       <div class="bar" role="toolbar" aria-label="peek">
         <span class="logo">peek</span>
         <span class="status"></span>
         <button type="button" class="primary" data-act="copy">전체 복사</button>
-        <button type="button" class="ghost" data-act="clear">지우기</button>
+        <button type="button" class="ghost" data-act="work" aria-expanded="false">메모 선택</button>
+        <button type="button" class="ghost" data-act="history" aria-expanded="false">히스토리</button>
+        <button type="button" class="ghost danger" data-act="clear">현재 작업 지우기</button>
         <button type="button" class="ghost icon" data-act="close" aria-label="끄기">✕</button>
       </div>
-      <div class="toast" hidden></div>
+      <div class="toast" role="status" hidden></div>
     `;
     // 메모 입력 중 키 입력이 페이지 단축키로 새지 않게
     ["keydown", "keyup", "keypress"].forEach((type) => host.addEventListener(type, (e) => e.stopPropagation()));
@@ -167,6 +190,10 @@
       status: shadow.querySelector(".status"),
       copy: shadow.querySelector('[data-act="copy"]'),
       toast: shadow.querySelector(".toast"),
+      panel: shadow.querySelector(".panel"),
+      workButton: shadow.querySelector('[data-act="work"]'),
+      historyButton: shadow.querySelector('[data-act="history"]'),
+      clear: shadow.querySelector('[data-act="clear"]'),
     };
 
     ui.pop.addEventListener("submit", (e) => {
@@ -183,7 +210,20 @@
       const act = e.target.closest?.("[data-act]")?.dataset.act;
       if (act === "cancel") closeDraft();
       if (act === "delete") deleteDraft();
-      if (act === "copy") copyAll();
+      if (act === "copy") void copyWork();
+      if (act === "work" || act === "history") {
+        view = view === act ? "" : act;
+        renderPanel();
+      }
+      if (act === "restore") restoreBatch(Number(e.target.dataset.index));
+      if (act === "clear-history" && ready && !busy && !draft && state.history.length &&
+          window.confirm("이 URL의 복사 히스토리를 모두 비울까요?")) {
+        void saveWork({ history: [] });
+      }
+      if (act === "edit-note") {
+        const index = Number(e.target.dataset.index);
+        openDraft(findElement(annotations[index]), index);
+      }
       if (act === "clear") clearAll();
       if (act === "close") deactivate();
       const pin = e.target.closest?.(".pin");
@@ -224,7 +264,7 @@
   }
 
   function openDraft(el, index) {
-    if (!ready || busy) return;
+    if (!ready || busy || draft) return;
     draft = { el, index };
     hoverEl = el;
     const editing = index !== undefined;
@@ -249,42 +289,123 @@
     if (!note) return ui.text.focus();
     const { index, el } = draft;
     if (index !== undefined) {
-      void saveWork({ annotations: annotations.map((item, i) => i === index ? { ...item, note } : item) });
+      void saveWork({ annotations: annotations.map((item, i) => i === index ? { ...item, note } : item) }, { finishDraft: true });
     } else {
       const number = state.nextNumber;
       const annotation = { number, note, info: prompt.describeElement(el, engine) };
       elements.set(annotation.info, el);
-      void saveWork({ annotations: [...annotations, annotation], nextNumber: number + 1 });
+      void saveWork({ annotations: [...annotations, annotation], nextNumber: number + 1 }, { finishDraft: true });
     }
   }
 
   function deleteDraft() {
     if (!draft || busy || !ready) return;
     const remaining = annotations.filter((_, index) => index !== draft.index);
-    void saveWork({ annotations: remaining, nextNumber: remaining.length ? state.nextNumber : 1 });
+    void saveWork({ annotations: remaining, nextNumber: remaining.length ? state.nextNumber : 1 }, { finishDraft: true });
   }
 
   function clearAll() {
-    if (!busy && ready && annotations.length) void saveWork({ annotations: [], nextNumber: 1 });
+    if (!busy && ready && !draft && annotations.length) void saveWork({ annotations: [], nextNumber: 1 });
   }
 
-  async function copyAll() {
-    if (!annotations.length) return showToast("먼저 요소를 클릭해서 메모를 남겨주세요");
+  function restoreBatch(index) {
+    if (!ready || busy || draft) return;
+    const batch = state.history[index];
+    if (!batch) return;
+    const restored = batch.annotations.map((item, offset) => ({ ...item, number: state.nextNumber + offset }));
+    void saveWork({ annotations: [...annotations, ...restored], nextNumber: state.nextNumber + restored.length });
+  }
+
+  async function copyWork() {
+    if (!ready || busy || draft || !annotations.length) return;
+    const id = loadId;
+    const batch = selected.size ? annotations.filter((item) => selected.has(item.number)) : annotations;
     const markdown = prompt.buildMarkdown(
       { url: location.href, width: window.innerWidth, height: window.innerHeight },
-      annotations,
+      batch,
     );
+    busy = true;
+    render();
     try {
-      await navigator.clipboard.writeText(markdown);
+      try {
+        await navigator.clipboard.writeText(markdown);
+      } catch {
+        const ta = document.createElement("textarea");
+        ta.value = markdown;
+        ta.style.cssText = "position: fixed; opacity: 0;";
+        document.body.appendChild(ta);
+        try {
+          ta.select();
+          if (!document.execCommand("copy")) throw new Error("Clipboard copy failed");
+        } finally {
+          ta.remove();
+        }
+      }
     } catch {
-      const ta = document.createElement("textarea");
-      ta.value = markdown;
-      document.body.appendChild(ta);
-      ta.select();
-      document.execCommand("copy");
-      ta.remove();
+      if (id === loadId) showToast("메모를 복사하지 못했어요. 다시 시도해 주세요");
+      return;
+    } finally {
+      busy = false;
+      render();
     }
-    showToast(`메모 ${annotations.length}개를 복사했어요. AI 에이전트에 붙여넣으세요`);
+
+    if (id !== loadId) return;
+    const remaining = annotations.filter((item) => !batch.includes(item));
+    const saved = await saveWork({
+      annotations: remaining,
+      nextNumber: remaining.length ? state.nextNumber : 1,
+      history: [{ copiedAt: Date.now(), annotations: batch }, ...state.history],
+    }, { copied: true });
+    if (saved) showToast(`메모 ${batch.length}개를 복사했어요`);
+  }
+
+  function renderPanel() {
+    if (!ui) return;
+    ui.panel.hidden = !view;
+    ui.workButton.setAttribute("aria-expanded", String(view === "work"));
+    ui.historyButton.setAttribute("aria-expanded", String(view === "history"));
+    if (!view) return;
+
+    const historyView = view === "history";
+    const entries = historyView ? state.history : annotations;
+    ui.panel.querySelector("legend").textContent = historyView ? "이 URL의 복사 히스토리" : "현재 작업";
+    const empty = ui.panel.querySelector(".empty");
+    empty.hidden = entries.length > 0;
+    empty.textContent = historyView ? "복사 히스토리가 없어요" : "아직 추가한 메모가 없어요";
+    ui.panel.querySelector('[data-act="clear-history"]').hidden = !historyView || !entries.length;
+    ui.panel.querySelector("ul").replaceChildren(...entries.map((entry, index) => {
+      const row = document.createElement("li");
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "ghost";
+      button.dataset.index = String(index);
+      if (historyView) {
+        const details = document.createElement("details");
+        const summary = document.createElement("summary");
+        summary.textContent = `${new Date(entry.copiedAt).toLocaleString()} · 메모 ${entry.annotations.length}개`;
+        const notes = document.createElement("p");
+        notes.textContent = entry.annotations.map((item) => `${item.number}. ${item.note}`).join("\n");
+        button.dataset.act = "restore";
+        button.textContent = "현재 작업에 추가";
+        details.append(summary, notes);
+        row.append(details, button);
+      } else {
+        const label = document.createElement("label");
+        const checkbox = document.createElement("input");
+        checkbox.type = "checkbox";
+        checkbox.checked = selected.has(entry.number);
+        checkbox.addEventListener("change", () => {
+          if (checkbox.checked) selected.add(entry.number);
+          else selected.delete(entry.number);
+          render();
+        });
+        label.append(checkbox, `${entry.number}. ${entry.note}`);
+        button.dataset.act = "edit-note";
+        button.textContent = "수정";
+        row.append(label, button);
+      }
+      return row;
+    }));
   }
 
   function showToast(message) {
@@ -330,6 +451,7 @@
       }),
     );
 
+    if (draft && !draft.el?.isConnected) ui.pop.style.transform = "";
     if (draft && draft.el?.isConnected) {
       const rect = draft.el.getBoundingClientRect();
       const popHeight = ui.pop.offsetHeight || 140;
@@ -343,7 +465,10 @@
     ui.status.textContent = annotations.length
       ? `메모 ${annotations.length}개`
       : "요소를 클릭해서 수정 요청을 남기세요";
-    ui.copy.disabled = busy || !ready || !annotations.length;
+    ui.copy.textContent = selected.size ? `선택 복사 (${selected.size}개)` : "전체 복사";
+    ui.copy.disabled = busy || !ready || !!draft || !annotations.length;
+    ui.clear.disabled = ui.copy.disabled;
+    ui.panel.querySelector("fieldset").disabled = busy || !ready || !!draft;
     ui.submit.disabled = busy;
     ui.del.disabled = busy;
   }
