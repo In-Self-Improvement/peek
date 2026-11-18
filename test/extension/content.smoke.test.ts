@@ -12,7 +12,7 @@ function runBrowserScript(relativePath: string) {
 
 const flush = () => new Promise((r) => setTimeout(r, 20));
 
-test("content script smoke: toggle, click element, write a note, copy markdown, exit", async () => {
+test("content script saves URL work, copies selected notes, and restores or clears history", async () => {
   const listeners: Array<(message: { action?: string }) => void> = [];
   let copied = "";
   const stored = new Map<string, unknown>();
@@ -63,22 +63,70 @@ test("content script smoke: toggle, click element, write a note, copy markdown, 
   await flush();
 
   expect(root.querySelectorAll(".pin")).toHaveLength(1);
-  root.querySelector<HTMLButtonElement>('[data-act="copy"]')!.click();
+  function add(note: string) {
+    target.dispatchEvent(new MouseEvent("mousemove", { bubbles: true }));
+    target.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+    root.querySelector("textarea")!.value = note;
+    pop.requestSubmit();
+    return flush();
+  }
+  const button = (action: string) => root.querySelector<HTMLButtonElement>(`[data-act="${action}"]`)!;
+
+  await add("두 번째");
+  await add("세 번째");
+  button("work").click();
+  root.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')[1].click();
+  button("copy").click();
   await flush();
-  expect(copied).toContain("## 1. 더 크게");
+  expect(copied).toContain("## 2. 두 번째");
+  expect(copied).not.toContain("더 크게");
   expect(copied).toContain('`[data-testid="buy"]`');
+  expect([...root.querySelectorAll(".pin")].map((pin) => pin.textContent)).toEqual(["1", "3"]);
 
-  expect(JSON.stringify([...stored.values()])).toContain("더 크게");
-
-  document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
-  expect(document.querySelector("peek-root")).toBeNull();
-  listeners[0]({ action: "toggleInspect" });
+  await add("네 번째");
+  expect([...root.querySelectorAll(".pin")].map((pin) => pin.textContent)).toEqual(["1", "3", "4"]);
+  button("copy").click();
   await flush();
-  expect(document.querySelector("peek-root")!.shadowRoot!.querySelector(".pin")?.textContent).toBe("1");
+  expect(copied).toContain("## 4. 네 번째");
+  expect(root.querySelectorAll(".pin")).toHaveLength(0);
+  await add("새 작업");
+  expect(root.querySelector(".pin")?.textContent).toBe("1");
+
+  button("history").click();
+  root.querySelectorAll<HTMLButtonElement>('[data-act="restore"]')[1].click();
+  await flush();
+  expect([...root.querySelectorAll(".pin")].map((pin) => pin.textContent)).toEqual(["1", "2"]);
+  const originalConfirm = window.confirm;
+  window.confirm = () => false;
+  button("clear-history").click();
+  expect(root.querySelectorAll('[data-act="restore"]')).toHaveLength(2);
+  window.confirm = () => true;
+  button("clear-history").click();
+  await flush();
+  window.confirm = originalConfirm;
+  expect(root.querySelectorAll('[data-act="restore"]')).toHaveLength(0);
+  expect(root.querySelectorAll(".pin")).toHaveLength(2);
+
+  Object.defineProperty(navigator, "clipboard", {
+    value: { writeText: async () => { throw new Error("Denied"); } },
+    configurable: true,
+  });
+  button("work").click();
+  root.querySelector<HTMLInputElement>('input[type="checkbox"]')!.click();
+  button("copy").click();
+  await flush();
+  expect(button("copy").textContent).toBe("선택 복사 (1개)");
+  expect(root.querySelectorAll(".pin")).toHaveLength(2);
+  expect(root.querySelector(".toast")?.textContent).toContain("복사하지 못했어요");
 
   listeners[0]({ action: "toggleInspect" });
   history.replaceState(null, "", "/other");
   listeners[0]({ action: "toggleInspect" });
   await flush();
   expect(document.querySelector("peek-root")!.shadowRoot!.querySelectorAll(".pin")).toHaveLength(0);
+  listeners[0]({ action: "toggleInspect" });
+  history.replaceState(null, "", "/");
+  listeners[0]({ action: "toggleInspect" });
+  await flush();
+  expect(document.querySelector("peek-root")!.shadowRoot!.querySelectorAll(".pin")).toHaveLength(2);
 });
