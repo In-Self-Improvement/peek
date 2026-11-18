@@ -15,7 +15,78 @@
   let ui = null;
   let hoverEl = null;
   let draft = null; // { el, index } index가 있으면 기존 메모 수정
-  let annotations = []; // { el, note, info }
+  let state = { revision: 0, annotations: [], nextNumber: 1 };
+  let annotations = state.annotations;
+  let key = "";
+  let busy = false;
+  let ready = false;
+  let loadId = 0;
+  const elements = new WeakMap();
+
+  function findElement(annotation) {
+    const original = elements.get(annotation.info);
+    if (original?.isConnected) return original;
+    if (!annotation.info.selector) return null;
+    const matches = document.querySelectorAll(annotation.info.selector);
+    return matches.length === 1 ? matches[0] : null;
+  }
+
+  function applyState(saved) {
+    state = saved ?? { revision: 0, annotations: [], nextNumber: 1 };
+    annotations = state.annotations;
+  }
+
+  async function loadWork() {
+    const id = ++loadId;
+    const requestedKey = `peek:${location.href}`;
+    key = requestedKey;
+    ready = false;
+    applyState();
+    render();
+    try {
+      const result = await chrome.storage.local.get(requestedKey);
+      if (loadId !== id) return;
+      applyState(result[requestedKey]);
+      ready = true;
+    } catch {
+      if (loadId === id) showToast("저장된 메모를 불러오지 못했어요");
+    }
+    render();
+  }
+
+  function onNavigate() {
+    if (key === `peek:${location.href}`) return;
+    closeDraft();
+    hoverEl = null;
+    void loadWork();
+  }
+
+  async function saveWork(changes) {
+    const id = loadId;
+    const next = { ...state, ...changes };
+    busy = true;
+    render();
+    try {
+      const result = await chrome.runtime.sendMessage({ action: "savePeekWork", key, state: next });
+      if (loadId !== id) return false;
+      if (result?.conflict) {
+        closeDraft();
+        await loadWork();
+        showToast("다른 탭에서 작업이 바뀌었어요. 최신 작업을 불러왔어요");
+        return false;
+      }
+      if (!result?.ok) throw new Error("Storage write failed");
+      applyState({ ...next, revision: next.revision + 1 });
+      closeDraft();
+      return true;
+    } catch {
+      if (loadId === id) showToast("메모를 저장하지 못했어요. 다시 시도해 주세요");
+      return false;
+    } finally {
+      busy = false;
+      render();
+    }
+  }
   let frame = 0;
 
   chrome.runtime.onMessage.addListener((message) => {
@@ -34,11 +105,13 @@
     document.addEventListener("keydown", onKey, true);
     window.addEventListener("scroll", schedule, true);
     window.addEventListener("resize", schedule);
-    render();
+    window.navigation?.addEventListener("currententrychange", onNavigate);
+    void loadWork();
   }
 
   function deactivate() {
     active = false;
+    loadId++;
     document.removeEventListener("mousemove", onMove, true);
     document.removeEventListener("click", onClick, true);
     document.removeEventListener("mousedown", blockPage, true);
@@ -46,12 +119,12 @@
     document.removeEventListener("keydown", onKey, true);
     window.removeEventListener("scroll", schedule, true);
     window.removeEventListener("resize", schedule);
+    window.navigation?.removeEventListener("currententrychange", onNavigate);
     host?.remove();
     host = null;
     ui = null;
     hoverEl = null;
     draft = null;
-    // ponytail: 메모는 탭이 살아 있는 동안만 메모리에 둔다. 새로고침 후 복원이 필요하면 sessionStorage로
   }
 
   function mountUi() {
@@ -114,7 +187,10 @@
       if (act === "clear") clearAll();
       if (act === "close") deactivate();
       const pin = e.target.closest?.(".pin");
-      if (pin) openDraft(annotations[Number(pin.dataset.index)].el, Number(pin.dataset.index));
+      if (pin) {
+        const index = Number(pin.dataset.index);
+        openDraft(findElement(annotations[index]), index);
+      }
     });
   }
 
@@ -148,6 +224,7 @@
   }
 
   function openDraft(el, index) {
+    if (!ready || busy) return;
     draft = { el, index };
     hoverEl = el;
     const editing = index !== undefined;
@@ -161,29 +238,34 @@
 
   function closeDraft() {
     draft = null;
+    if (!ui) return;
     ui.pop.hidden = true;
     render();
   }
 
   function saveDraft() {
+    if (!draft || busy || !ready) return;
     const note = ui.text.value.trim();
     if (!note) return ui.text.focus();
-    if (draft.index !== undefined) {
-      annotations[draft.index].note = note;
+    const { index, el } = draft;
+    if (index !== undefined) {
+      void saveWork({ annotations: annotations.map((item, i) => i === index ? { ...item, note } : item) });
     } else {
-      annotations.push({ el: draft.el, note, info: prompt.describeElement(draft.el, engine) });
+      const number = state.nextNumber;
+      const annotation = { number, note, info: prompt.describeElement(el, engine) };
+      elements.set(annotation.info, el);
+      void saveWork({ annotations: [...annotations, annotation], nextNumber: number + 1 });
     }
-    closeDraft();
   }
 
   function deleteDraft() {
-    annotations.splice(draft.index, 1);
-    closeDraft();
+    if (!draft || busy || !ready) return;
+    const remaining = annotations.filter((_, index) => index !== draft.index);
+    void saveWork({ annotations: remaining, nextNumber: remaining.length ? state.nextNumber : 1 });
   }
 
   function clearAll() {
-    annotations = [];
-    closeDraft();
+    if (!busy && ready && annotations.length) void saveWork({ annotations: [], nextNumber: 1 });
   }
 
   async function copyAll() {
@@ -206,6 +288,7 @@
   }
 
   function showToast(message) {
+    if (!ui) return;
     ui.toast.textContent = message;
     ui.toast.hidden = false;
     clearTimeout(showToast.timer);
@@ -235,18 +318,19 @@
         pin.type = "button";
         pin.className = "pin";
         pin.dataset.index = String(index);
-        pin.textContent = String(index + 1);
+        const el = findElement(annotation);
+        pin.textContent = String(annotation.number);
         pin.title = annotation.note;
-        pin.hidden = !annotation.el.isConnected;
-        if (annotation.el.isConnected) {
-          const rect = annotation.el.getBoundingClientRect();
+        pin.hidden = !el?.isConnected;
+        if (el?.isConnected) {
+          const rect = el.getBoundingClientRect();
           pin.style.transform = `translate(${Math.max(4, rect.left - 10)}px, ${Math.max(4, rect.top - 10)}px)`;
         }
         return pin;
       }),
     );
 
-    if (draft && draft.el.isConnected) {
+    if (draft && draft.el?.isConnected) {
       const rect = draft.el.getBoundingClientRect();
       const popHeight = ui.pop.offsetHeight || 140;
       const popWidth = ui.pop.offsetWidth || 320;
@@ -259,6 +343,8 @@
     ui.status.textContent = annotations.length
       ? `메모 ${annotations.length}개`
       : "요소를 클릭해서 수정 요청을 남기세요";
-    ui.copy.disabled = !annotations.length;
+    ui.copy.disabled = busy || !ready || !annotations.length;
+    ui.submit.disabled = busy;
+    ui.del.disabled = busy;
   }
 })();

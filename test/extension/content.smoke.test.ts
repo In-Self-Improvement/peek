@@ -15,8 +15,17 @@ const flush = () => new Promise((r) => setTimeout(r, 20));
 test("content script smoke: toggle, click element, write a note, copy markdown, exit", async () => {
   const listeners: Array<(message: { action?: string }) => void> = [];
   let copied = "";
+  const stored = new Map<string, unknown>();
   (globalThis as unknown as { chrome: unknown }).chrome = {
+    storage: {
+      local: { get: async (key: string) => ({ [key]: stored.get(key) }) },
+    },
     runtime: {
+      sendMessage: async ({ key, state }: { key: string; state: unknown }) => {
+        const next = state as { revision: number };
+        stored.set(key, structuredClone({ ...next, revision: next.revision + 1 }));
+        return { ok: true };
+      },
       onMessage: { addListener: (listener: (message: { action?: string }) => void) => listeners.push(listener) },
       getURL: (path: string) => `chrome-extension://test/${path}`,
     },
@@ -38,6 +47,7 @@ test("content script smoke: toggle, click element, write a note, copy markdown, 
   document.body.appendChild(target);
 
   listeners[0]({ action: "toggleInspect" });
+  await flush();
   const root = document.querySelector("peek-root")!.shadowRoot!;
   expect(root.querySelector(".bar")).toBeTruthy();
 
@@ -58,6 +68,17 @@ test("content script smoke: toggle, click element, write a note, copy markdown, 
   expect(copied).toContain("## 1. 더 크게");
   expect(copied).toContain('`[data-testid="buy"]`');
 
+  expect(JSON.stringify([...stored.values()])).toContain("더 크게");
+
   document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
   expect(document.querySelector("peek-root")).toBeNull();
+  listeners[0]({ action: "toggleInspect" });
+  await flush();
+  expect(document.querySelector("peek-root")!.shadowRoot!.querySelector(".pin")?.textContent).toBe("1");
+
+  listeners[0]({ action: "toggleInspect" });
+  history.replaceState(null, "", "/other");
+  listeners[0]({ action: "toggleInspect" });
+  await flush();
+  expect(document.querySelector("peek-root")!.shadowRoot!.querySelectorAll(".pin")).toHaveLength(0);
 });
