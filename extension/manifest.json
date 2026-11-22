@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "peek — click UI, prompt your AI",
   "short_name": "peek",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "Click any element on a web page, write what to change, and copy a precise prompt for Claude Code, Cursor or Codex.",
   "permissions": ["activeTab", "scripting", "storage"],
   "action": {

@@ -15,6 +15,7 @@
   let ui = null;
   let hoverEl = null;
   let draft = null; // { el, index } index가 있으면 기존 메모 수정
+  const sessionWork = chrome.storage?.local ? null : new Map();
   const emptyWork = { revision: 0, annotations: [], nextNumber: 1, history: [] };
   let state = emptyWork;
   let annotations = state.annotations;
@@ -52,10 +53,13 @@
     applyState();
     render();
     try {
-      const result = await chrome.storage.local.get(requestedKey);
+      const saved = sessionWork
+        ? sessionWork.get(requestedKey)
+        : (await chrome.storage.local.get(requestedKey))[requestedKey];
       if (loadId !== id) return;
-      applyState(result[requestedKey]);
+      applyState(saved);
       ready = true;
+      if (sessionWork) showToast("임시 메모 모드예요. 계속 저장하려면 확장을 다시 로드하고 페이지를 새로고침하세요");
     } catch {
       if (loadId === id) showToast("저장된 메모를 불러오지 못했어요");
     }
@@ -75,6 +79,13 @@
     busy = true;
     render();
     try {
+      const saved = { ...next, revision: next.revision + 1 };
+      if (sessionWork) {
+        sessionWork.set(key, saved);
+        applyState(saved);
+        if (finishDraft) closeDraft();
+        return true;
+      }
       const result = await chrome.runtime.sendMessage({ action: "savePeekWork", key, state: next });
       if (loadId !== id) return false;
       if (result?.conflict) {
@@ -86,7 +97,7 @@
         return false;
       }
       if (!result?.ok) throw new Error("Storage write failed");
-      applyState({ ...next, revision: next.revision + 1 });
+      applyState(saved);
       if (finishDraft) closeDraft();
       return true;
     } catch {
