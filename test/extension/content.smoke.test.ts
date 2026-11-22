@@ -12,16 +12,18 @@ function runBrowserScript(relativePath: string) {
 
 const flush = () => new Promise((r) => setTimeout(r, 20));
 
-test("content script saves URL work, copies selected notes, and restores or clears history", async () => {
+test.each([true, false])("URL work and history work with storage permission: %s", async (hasStorage) => {
+  Reflect.deleteProperty(globalThis, "__peekContentLoaded");
   const listeners: Array<(message: { action?: string }) => void> = [];
   let copied = "";
   const stored = new Map<string, unknown>();
   (globalThis as unknown as { chrome: unknown }).chrome = {
-    storage: {
+    storage: hasStorage ? {
       local: { get: async (key: string) => ({ [key]: stored.get(key) }) },
-    },
+    } : undefined,
     runtime: {
       sendMessage: async ({ key, state }: { key: string; state: unknown }) => {
+        expect(hasStorage).toBe(true);
         const next = state as { revision: number };
         stored.set(key, structuredClone({ ...next, revision: next.revision + 1 }));
         return { ok: true };
@@ -50,6 +52,7 @@ test("content script saves URL work, copies selected notes, and restores or clea
   await flush();
   const root = document.querySelector("peek-root")!.shadowRoot!;
   expect(root.querySelector(".bar")).toBeTruthy();
+  if (!hasStorage) expect(root.querySelector(".toast")?.textContent).toContain("임시");
 
   target.dispatchEvent(new MouseEvent("mousemove", { bubbles: true }));
   const pageClick = new MouseEvent("click", { bubbles: true, cancelable: true });
@@ -129,4 +132,6 @@ test("content script saves URL work, copies selected notes, and restores or clea
   listeners[0]({ action: "toggleInspect" });
   await flush();
   expect(document.querySelector("peek-root")!.shadowRoot!.querySelectorAll(".pin")).toHaveLength(2);
+  listeners[0]({ action: "toggleInspect" });
+  target.remove();
 });

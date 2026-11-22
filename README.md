@@ -13,7 +13,7 @@
 
 ## 구조
 
-- `extension/manifest.json`: MV3, 권한은 `activeTab`·`scripting`만 (아이콘/단축키를 누른 탭에만 주입)
+- `extension/manifest.json`: MV3, 권한은 `activeTab`·`scripting`·`storage` (아이콘/단축키를 누른 탭에만 주입, 메모는 로컬 저장)
 - `extension/background.js`: 아이콘 클릭 시 스크립트 주입 후 토글
 - `extension/selector-engine.js`: 코드 검색 단서(테스트 ID, 컴포넌트명 등) 추출
 - `extension/prompt.js`: 고유 selector 생성, 요소 설명, 마크다운 빌드
@@ -29,7 +29,9 @@ npm run package   # peek-extension.zip 생성 → 웹스토어 대시보드에 �
 
 ## Privacy
 
-peek은 사용자 데이터를 수집하거나 전송하지 않습니다. 메모와 요소 정보는 사용자가 `전체 복사`를 누를 때 클립보드로만 복사됩니다.
+Peek은 메모와 복사 히스토리를 Chrome 확장 로컬 저장소에 보관합니다. 외부 서버로 전송하지 않으며, 복사 버튼을 누르면 클립보드에 기록합니다.
+
+개발자 모드에서 로드한 확장의 코드나 권한을 업데이트한 뒤에는 `chrome://extensions`에서 Peek을 다시 로드하고 사용 중인 페이지를 새로고침하세요. 저장소 권한이 적용되기 전에는 메모를 임시로 작성하고 복사할 수 있습니다. 페이지를 새로고침하기 전에 임시 메모를 복사해 두세요.
 
 ## 개발 서버
 
